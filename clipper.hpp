@@ -41,7 +41,7 @@
 //#define use_int32
 
 //use_xyz: adds a Z member to IntPoint. Adds a minor cost to perfomance.
-//#define use_xyz
+#define use_xyz
 
 //use_lines: Enables line clipping. Adds a very minor cost to performance.
 #define use_lines
@@ -123,7 +123,7 @@ struct DoublePoint
 //------------------------------------------------------------------------------
 
 #ifdef use_xyz
-typedef void (*ZFillCallback)(IntPoint& e1bot, IntPoint& e1top, IntPoint& e2bot, IntPoint& e2top, IntPoint& pt);
+typedef void (*ZFillCallback)(void * p, IntPoint& e1bot, IntPoint& e1top, IntPoint& e2bot, IntPoint& e2top, IntPoint& pt);
 #endif
 
 enum InitOptions {ioReverseSolution = 1, ioStrictlySimple = 2, ioPreserveCollinear = 4};
@@ -251,17 +251,17 @@ class Clipper : public virtual ClipperBase
 public:
   Clipper(int initOptions = 0);
   ~Clipper();
-  bool Execute(ClipType clipType,
+  void Execute(ClipType clipType,
       Paths &solution,
       PolyFillType fillType = pftEvenOdd);
-  bool Execute(ClipType clipType,
+  void Execute(ClipType clipType,
       Paths &solution,
       PolyFillType subjFillType,
       PolyFillType clipFillType);
-  bool Execute(ClipType clipType,
+  void Execute(ClipType clipType,
       PolyTree &polytree,
       PolyFillType fillType = pftEvenOdd);
-  bool Execute(ClipType clipType,
+  void Execute(ClipType clipType,
       PolyTree &polytree,
       PolyFillType subjFillType,
       PolyFillType clipFillType);
@@ -271,11 +271,11 @@ public:
   void StrictlySimple(bool value) {m_StrictSimple = value;};
   //set the callback function for z value filling on intersections (otherwise Z is 0)
 #ifdef use_xyz
-  void ZFillFunction(ZFillCallback zFillFunc);
+  void ZFillFunction(ZFillCallback zFillFunc, void * arg=NULL);
 #endif
 protected:
   void Reset();
-  virtual bool ExecuteInternal();
+  virtual void ExecuteInternal();
 private:
   PolyOutList      m_PolyOuts;
   JoinList         m_Joins;
@@ -288,14 +288,14 @@ private:
   MaximaList       m_Maxima;
   TEdge           *m_ActiveEdges;
   TEdge           *m_SortedEdges;
-  bool             m_ExecuteLocked;
   PolyFillType     m_ClipFillType;
   PolyFillType     m_SubjFillType;
   bool             m_ReverseOutput;
-  bool             m_UsingPolyTree; 
+  bool             m_UsingPolyTree;
   bool             m_StrictSimple;
 #ifdef use_xyz
-  ZFillCallback   m_ZFill; //custom callback 
+  ZFillCallback   m_ZFill; //custom callback
+  void *          m_ZFillArg;
 #endif
   void SetWindingCount(TEdge& edge);
   bool IsEvenOddFillType(const TEdge& edge) const;
@@ -326,7 +326,7 @@ private:
   OutPt* GetLastOutPt(TEdge *e);
   void DisposeAllOutRecs();
   void DisposeOutRec(PolyOutList::size_type index);
-  bool ProcessIntersections(const cInt topY);
+  void ProcessIntersections(const cInt topY);
   void BuildIntersectList(const cInt topY);
   void ProcessIntersectList();
   void ProcessEdgesAtTopOfScanbeam(const cInt topY);

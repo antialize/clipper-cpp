@@ -885,8 +885,8 @@ void RangeTest(const IntPoint& Pt, bool& useFullRange)
 {
   if (useFullRange)
   {
-    if (Pt.X > hiRange || Pt.Y > hiRange || -Pt.X > hiRange || -Pt.Y > hiRange) 
-      throw "Coordinate outside allowed range";
+    if (Pt.X > hiRange || Pt.Y > hiRange || -Pt.X > hiRange || -Pt.Y > hiRange)
+      throw clipperException("Coordinate outside allowed range");
   }
   else if (Pt.X > loRange|| Pt.Y > loRange || -Pt.X > loRange || -Pt.Y > loRange) 
   {
@@ -1324,7 +1324,6 @@ Clipper::Clipper(int initOptions) : ClipperBase() //constructor
 {
   m_ActiveEdges = 0;
   m_SortedEdges = 0;
-  m_ExecuteLocked = false;
   m_UseFullRange = false;
   m_ReverseOutput = ((initOptions & ioReverseSolution) != 0);
   m_StrictSimple = ((initOptions & ioStrictlySimple) != 0);
@@ -1332,6 +1331,7 @@ Clipper::Clipper(int initOptions) : ClipperBase() //constructor
   m_HasOpenPaths = false;
 #ifdef use_xyz  
   m_ZFill = 0;
+  m_ZFillArg = NULL;
 #endif
 }
 //------------------------------------------------------------------------------
@@ -1342,10 +1342,11 @@ Clipper::~Clipper() //destructor
 }
 //------------------------------------------------------------------------------
 
-#ifdef use_xyz  
-void Clipper::ZFillFunction(ZFillCallback zFillFunc)
-{  
+#ifdef use_xyz
+void Clipper::ZFillFunction(ZFillCallback zFillFunc, void * arg)
+{
   m_ZFill = zFillFunc;
+  m_ZFillArg = arg;
 }
 //------------------------------------------------------------------------------
 #endif
@@ -1362,52 +1363,44 @@ void Clipper::Reset()
 }
 //------------------------------------------------------------------------------
 
-bool Clipper::Execute(ClipType clipType, Paths &solution, PolyFillType fillType)
+void Clipper::Execute(ClipType clipType, Paths &solution, PolyFillType fillType)
 {
-    return Execute(clipType, solution, fillType, fillType);
+    Execute(clipType, solution, fillType, fillType);
 }
 //------------------------------------------------------------------------------
 
-bool Clipper::Execute(ClipType clipType, PolyTree &polytree, PolyFillType fillType)
+void Clipper::Execute(ClipType clipType, PolyTree &polytree, PolyFillType fillType)
 {
-    return Execute(clipType, polytree, fillType, fillType);
+    Execute(clipType, polytree, fillType, fillType);
 }
 //------------------------------------------------------------------------------
 
-bool Clipper::Execute(ClipType clipType, Paths &solution,
+void Clipper::Execute(ClipType clipType, Paths &solution,
     PolyFillType subjFillType, PolyFillType clipFillType)
 {
-  if( m_ExecuteLocked ) return false;
   if (m_HasOpenPaths)
     throw clipperException("Error: PolyTree struct is needed for open path clipping.");
-  m_ExecuteLocked = true;
   solution.resize(0);
   m_SubjFillType = subjFillType;
   m_ClipFillType = clipFillType;
   m_ClipType = clipType;
   m_UsingPolyTree = false;
-  bool succeeded = ExecuteInternal();
-  if (succeeded) BuildResult(solution);
+  ExecuteInternal();
+  BuildResult(solution);
   DisposeAllOutRecs();
-  m_ExecuteLocked = false;
-  return succeeded;
 }
 //------------------------------------------------------------------------------
 
-bool Clipper::Execute(ClipType clipType, PolyTree& polytree,
+void Clipper::Execute(ClipType clipType, PolyTree& polytree,
     PolyFillType subjFillType, PolyFillType clipFillType)
 {
-  if( m_ExecuteLocked ) return false;
-  m_ExecuteLocked = true;
   m_SubjFillType = subjFillType;
   m_ClipFillType = clipFillType;
   m_ClipType = clipType;
   m_UsingPolyTree = true;
-  bool succeeded = ExecuteInternal();
-  if (succeeded) BuildResult2(polytree);
+  ExecuteInternal();
+  BuildResult2(polytree);
   DisposeAllOutRecs();
-  m_ExecuteLocked = false;
-  return succeeded;
 }
 //------------------------------------------------------------------------------
 
@@ -1426,34 +1419,24 @@ void Clipper::FixHoleLinkage(OutRec &outrec)
 }
 //------------------------------------------------------------------------------
 
-bool Clipper::ExecuteInternal()
+void Clipper::ExecuteInternal()
 {
-  bool succeeded = true;
-  try {
-    Reset();
-    if (m_CurrentLM == m_MinimaList.end()) return true;
-    cInt botY = PopScanbeam();
-    do {
-      InsertLocalMinimaIntoAEL(botY);
-      ProcessHorizontals();
-	  ClearGhostJoins();
-	  if (m_Scanbeam.empty()) break;
-      cInt topY = PopScanbeam();
-      succeeded = ProcessIntersections(topY);
-      if (!succeeded) break;
-      ProcessEdgesAtTopOfScanbeam(topY);
-      botY = topY;
-    } while (!m_Scanbeam.empty() || m_CurrentLM != m_MinimaList.end());
-  }
-  catch(...) 
-  {
-    succeeded = false;
-  }
+  Reset();
+  if (m_CurrentLM == m_MinimaList.end()) return;
+  cInt botY = PopScanbeam();
+  do {
+    InsertLocalMinimaIntoAEL(botY);
+    ProcessHorizontals();
+    ClearGhostJoins();
+    if (m_Scanbeam.empty()) break;
+    cInt topY = PopScanbeam();
+    ProcessIntersections(topY);
+    ProcessEdgesAtTopOfScanbeam(topY);
+    botY = topY;
+  } while (!m_Scanbeam.empty() || m_CurrentLM != m_MinimaList.end());
 
-  if (succeeded)
-  {
-    //fix orientations ...
-    for (PolyOutList::size_type i = 0; i < m_PolyOuts.size(); ++i)
+  //fix orientations ...
+  for (PolyOutList::size_type i = 0; i < m_PolyOuts.size(); ++i)
     {
       OutRec *outRec = m_PolyOuts[i];
       if (!outRec->Pts || outRec->IsOpen) continue;
@@ -1474,12 +1457,10 @@ bool Clipper::ExecuteInternal()
         FixupOutPolygon(*outRec);
     }
 
-    if (m_StrictSimple) DoSimplePolygons();
-  }
+  if (m_StrictSimple) DoSimplePolygons();
 
   ClearJoins();
   ClearGhostJoins();
-  return succeeded;
 }
 //------------------------------------------------------------------------------
 
@@ -1980,7 +1961,7 @@ void Clipper::SetZ(IntPoint& pt, TEdge& e1, TEdge& e2)
   else if (pt == e1.Top) pt.Z = e1.Top.Z;
   else if (pt == e2.Bot) pt.Z = e2.Bot.Z;
   else if (pt == e2.Top) pt.Z = e2.Top.Z;
-  else (*m_ZFill)(e1.Bot, e1.Top, e2.Bot, e2.Top, pt); 
+  else (*m_ZFill)(m_ZFillArg, e1.Bot, e1.Top, e2.Bot, e2.Top, pt);
 }
 //------------------------------------------------------------------------------
 #endif
@@ -2782,24 +2763,23 @@ void Clipper::UpdateEdgeIntoAEL(TEdge *&e)
 }
 //------------------------------------------------------------------------------
 
-bool Clipper::ProcessIntersections(const cInt topY)
+void Clipper::ProcessIntersections(const cInt topY)
 {
-  if( !m_ActiveEdges ) return true;
+  if( !m_ActiveEdges ) return;
   try {
     BuildIntersectList(topY);
     size_t IlSize = m_IntersectList.size();
-    if (IlSize == 0) return true;
+    if (IlSize == 0) return;
     if (IlSize == 1 || FixupIntersectionOrder()) ProcessIntersectList();
-    else return false;
+    else throw (clipperException("ProcessIntersections error"));
   }
   catch(...) 
   {
     m_SortedEdges = 0;
     DisposeIntersectNodes();
-    throw clipperException("ProcessIntersections error");
+    throw;
   }
   m_SortedEdges = 0;
-  return true;
 }
 //------------------------------------------------------------------------------
 
