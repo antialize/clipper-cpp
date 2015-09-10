@@ -58,6 +58,7 @@
 #include <ostream>
 #include <functional>
 #include <queue>
+#include <memory>
 
 namespace ClipperLib {
 
@@ -131,7 +132,7 @@ enum JoinType {jtSquare, jtRound, jtMiter};
 enum EndType {etClosedPolygon, etClosedLine, etOpenButt, etOpenSquare, etOpenRound};
 
 class PolyNode;
-typedef std::vector< PolyNode* > PolyNodes;
+typedef std::vector<PolyNode* > PolyNodes;
 
 class PolyNode 
 { 
@@ -205,10 +206,10 @@ struct OutPt;
 struct OutRec;
 struct Join;
 
-typedef std::vector < OutRec* > PolyOutList;
-typedef std::vector < TEdge* > EdgeList;
-typedef std::vector < Join* > JoinList;
-typedef std::vector < IntersectNode* > IntersectList;
+typedef std::vector<std::unique_ptr<OutRec> > PolyOutList;
+typedef std::vector<std::unique_ptr<TEdge[]> > EdgeList;
+typedef std::vector<std::unique_ptr<Join> > JoinList;
+typedef std::vector<std::unique_ptr<IntersectNode> > IntersectList;
 
 //------------------------------------------------------------------------------
 
@@ -344,7 +345,7 @@ private:
   void ClearJoins();
   void ClearGhostJoins();
   void AddGhostJoin(OutPt *op, const IntPoint offPt);
-  bool JoinPoints(Join *j, OutRec* outRec1, OutRec* outRec2);
+  bool JoinPoints(Join & j, OutRec* outRec1, OutRec* outRec2);
   void JoinCommonEdges();
   void DoSimplePolygons();
   void FixupFirstLefts1(OutRec* OldOutRec, OutRec* NewOutRec);
